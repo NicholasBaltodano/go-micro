@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 )
@@ -17,9 +19,16 @@ func doNothing(w http.ResponseWriter, r *http.Request) {
 }
 
 func hello(w http.ResponseWriter, r *http.Request) {
-	log.Println("Hello World ! ")
+	log.Println("Hello World !")
+
+	data, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "oops", http.StatusBadRequest)
+	}
+
+	fmt.Fprintf(w, "Hello %s", data)
 }
 
 func goodbye(w http.ResponseWriter, r *http.Request) {
-	log.Println("Goodbye")
+	log.Println("Goodbye world!")
 }
