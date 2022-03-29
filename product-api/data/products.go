@@ -18,18 +18,23 @@ type Product struct {
 	Deleted     string  `json:"-"`
 }
 
+// Struct functions
 func (p *Product) FromJSON(r io.Reader) error {
 	e := json.NewDecoder(r)
 	return e.Decode(p)
 }
-
-type Products []*Product
 
 func (p *Products) ToJSON(w io.Writer) error {
 	e := json.NewEncoder(w)
 	return e.Encode(p)
 }
 
+// Types and Vars
+type Products []*Product
+
+var ErrProductNotFound = fmt.Errorf("Product not found")
+
+// Package Functions
 func GetProducts() Products {
 	return ProductList
 }
@@ -47,8 +52,6 @@ func UpdateProduct(id int, p *Product) error {
 	return nil
 }
 
-var ErrProductNotFound = fmt.Errorf("Product not found")
-
 func FindProduct(id int) (*Product, int, error) {
 	for i, p := range ProductList {
 		if p.ID == id {
@@ -58,6 +61,7 @@ func FindProduct(id int) (*Product, int, error) {
 	fmt.Println("hello")
 	return nil, -1, ErrProductNotFound
 }
+
 func AddProduct(p *Product) {
 	p.ID = getNextID()
 	ProductList = append(ProductList, p)
@@ -68,6 +72,7 @@ func getNextID() int {
 	return lp.ID + 1
 }
 
+// Data
 var ProductList = []*Product{
 	{
 		ID:          1,
