@@ -1,12 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"log"
 	"net/http"
-	"regexp"
 	"strconv"
 
 	"github.com/NicholasBaltodano/go-micro/product-api/data"
+	"github.com/gorilla/mux"
 )
 
 type Products struct {
@@ -17,53 +18,7 @@ func NewProduct(l *log.Logger) *Products {
 	return &Products{l}
 }
 
-func (p *Products) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet {
-		p.logger.Println("getProducts called")
-		p.getProducts(rw, r)
-		return
-	}
-
-	if r.Method == http.MethodPost {
-		p.addProduct(rw, r)
-		return
-	}
-
-	if r.Method == http.MethodPut {
-		p.logger.Println("PUT", r.URL.Path)
-		// expect ID in URI
-		reg := regexp.MustCompile(`/([0-9]+)`)
-		results := reg.FindAllSubmatch([]byte(r.URL.Path), -1)
-
-		// Check for multiple IDs
-		if len(results) != 1 {
-			p.logger.Println("Put, URI multiple ID's")
-			http.Error(rw, "Invalid URI", http.StatusBadRequest)
-			return
-		}
-
-		if len(results[0]) != 2 {
-			p.logger.Println("Put, invalid URI, multiple capture groups", string(results[0][0]))
-			http.Error(rw, "Invalid URI", http.StatusBadRequest)
-			return
-		}
-
-		idString := results[0][1]
-		id, err := strconv.Atoi(string(idString))
-		if err != nil {
-			p.logger.Println("Failed to convert id , ", idString)
-			http.Error(rw, "Invalid URI", http.StatusBadRequest)
-		}
-
-		p.logger.Println("got id", id)
-		p.updateProducts(id, rw, r)
-	}
-
-	// Catch All
-	rw.WriteHeader(http.StatusMethodNotAllowed)
-}
-
-func (p *Products) getProducts(rw http.ResponseWriter, r *http.Request) {
+func (p *Products) GetProducts(rw http.ResponseWriter, r *http.Request) {
 	lp := data.GetProducts()
 	err := lp.ToJSON(rw)
 	if err != nil {
@@ -72,31 +27,29 @@ func (p *Products) getProducts(rw http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (p *Products) addProduct(rw http.ResponseWriter, r *http.Request) {
+func (p *Products) AddProduct(rw http.ResponseWriter, r *http.Request) {
 	p.logger.Println("Post product called")
-	newProduct := &data.Product{}
 
-	err := newProduct.FromJSON(r.Body)
-	if err != nil {
-		p.logger.Println(err)
-		http.Error(rw, "Unable to unmarshal JSON", http.StatusBadRequest)
-	}
+	// Validation done by middleware
+	newProduct := r.Context().Value(KeyProduct{}).(data.Product)
 
 	p.logger.Printf("Prod: %#v", newProduct)
-	data.AddProduct(newProduct)
+	data.AddProduct(&newProduct)
 }
 
-func (p Products) updateProducts(id int, rw http.ResponseWriter, r *http.Request) {
-	p.logger.Println("PUT product called")
-	newProduct := &data.Product{}
-
-	err := newProduct.FromJSON(r.Body)
+func (p Products) UpdateProducts(rw http.ResponseWriter, r *http.Request) {
+	// Gorilla ID goes into mux.Vars(r)
+	vars := mux.Vars(r)
+	id, err := strconv.Atoi(vars["id"])
 	if err != nil {
-		p.logger.Println(err)
-		http.Error(rw, "Unable to unmarshal JSON", http.StatusBadRequest)
+		http.Error(rw, "Unable to convert id", http.StatusBadRequest)
 	}
 
-	err = data.UpdateProduct(id, newProduct)
+	p.logger.Println("PUT product called - ID = ", id)
+	// Validation done by middleware
+	newProduct := r.Context().Value(KeyProduct{}).(data.Product)
+
+	err = data.UpdateProduct(id, &newProduct)
 	if err == data.ErrProductNotFound {
 		http.Error(rw, "Product not found", http.StatusNotFound)
 		return
@@ -105,4 +58,26 @@ func (p Products) updateProducts(id int, rw http.ResponseWriter, r *http.Request
 	if err != nil {
 		http.Error(rw, "Failed to update product", http.StatusNotFound)
 	}
+}
+
+type KeyProduct struct{}
+
+func (p Products) MiddlewareValidateProduct(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		prod := data.Product{}
+
+		err := prod.FromJSON(r.Body)
+		if err != nil {
+			p.logger.Println("[ERROR] deserializing product", err)
+			http.Error(rw, "Error reading product", http.StatusBadRequest)
+			return
+		}
+
+		// add the product to the context
+		ctx := context.WithValue(r.Context(), KeyProduct{}, prod)
+		r = r.WithContext(ctx)
+
+		// Call the next handler, which can be another middleware in the chain, or the final handler.
+		next.ServeHTTP(rw, r)
+	})
 }

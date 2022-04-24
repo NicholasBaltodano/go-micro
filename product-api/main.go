@@ -8,25 +8,34 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/NicholasBaltodano/go-micro/handlers"
+	"github.com/NicholasBaltodano/go-micro/product-api/handlers"
+	"github.com/gorilla/mux"
 )
+
+//var bindAddress = env.String("BIND_ADDRESS", false, ":9090", "Bind Address for the server")
 
 func main() {
 	// Set logger
 	logger := log.New(os.Stdout, "product-api", log.LstdFlags)
 
 	// Define handlers
-	//helloHandler := handlers.NewHello(logger)
-	goodbyeHandler := handlers.NewGoodbye(logger)
 	productHandler := handlers.NewProduct(logger)
 
 	// ServeMux creation and handler set up
-	serveMux := http.NewServeMux()
-	//serveMux.Handle("/", helloHandler)
-	//serveMux.Handle("/goodbye", goodbyeHandler)
-	serveMux.Handle("/goodbye", goodbyeHandler)
-	//serveMux.Handle("/products", productHandler)
-	serveMux.Handle("/", productHandler)
+	serveMux := mux.NewRouter()
+
+	getRouter := serveMux.Methods(http.MethodGet).Subrouter()
+
+	getRouter.HandleFunc("/", productHandler.GetProducts)
+
+	putRouter := serveMux.Methods(http.MethodPut).Subrouter()
+	getRouter.Use(productHandler.MiddlewareValidateProduct)
+	putRouter.HandleFunc("/{id:[0-9]+}", productHandler.UpdateProducts)
+
+	postRouter := serveMux.Methods(http.MethodPost).Subrouter()
+	postRouter.Use(productHandler.MiddlewareValidateProduct)
+	postRouter.HandleFunc("/", productHandler.AddProduct)
+
 	serveMux.HandleFunc("/favicon", doNothing)
 
 	// Create server with custom servemux
